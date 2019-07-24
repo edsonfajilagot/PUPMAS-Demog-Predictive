@@ -1,0 +1,256 @@
+---
+title: "Predicting dx (Number of Deaths Between Ages x to x+1) Using 1980 CSO Table"
+author: "Group A"
+date: "22 July 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(ggplot2)
+library(forecast)
+library(tseries)
+library(DMwR)
+
+
+```
+
+
+## Introduction
+The goal of this study is to evaluate the prediction of dx, deaths between ages x to x+1 based on 1980 CSO table using time series analysis. 
+
+The commissioners standard ordinary (CSO) mortality table reflects the probability that people in various age groups will die in a given year. Our CSO table to be used contains three variables - Age, lx and dx. Age represent person's age from 0 to 99. Lx represnt number of suriviving to age x while dx is the number of dying between ages x to x +1.
+
+
+We will try to forecast dx for ages from 51 to 99 using historical data points of ages 0-50 using time series forecasting model ARIMA.
+
+ARIMA stands for Autoregressive Integrated Moving Average. ARIMA is also known as Box-Jenkins approach. Box and Jenkins claimed that non-stationary data can be made stationary by differencing the series, Yt. The general model for Yt is written as,
+
+Yt =ϕ1Yt−1 +ϕ2Yt−2…ϕpYt−p +ϵt + θ1ϵt−1+ θ2ϵt−2 +…θqϵt−q
+
+
+The ARIMA model combines three basic methods:
+
+* AutoRegression (AR) – In auto-regression the values of a given time series data are regressed on their own lagged values, which is indicated by the “p” value in the model.
+
+* Differencing (I-for Integrated) – This involves differencing the time series data to remove the trend and convert a non-stationary time series to a stationary one. This is indicated by the “d” value in the model. If d = 1, it looks at the difference between two time series entries, if d = 2 it looks at the differences of the differences obtained at d = 1, and so forth.
+
+* Moving Average (MA) – The moving average nature of the model is represented by the “q” value which is the number of lagged values of the error term.
+
+This model is called Autoregressive Integrated Moving Average or ARIMA(p,d,q) of Yt.  We will follow the steps enumerated below to build our model.
+
+1. Data exploration and visualization.
+2. Testing and ensuring stationarity.
+3. Identification of model paramerters.
+4. Building the model.
+5. Forecasting
+
+
+
+### 1. Data Exploration and Visualization
+
+As a first step, we will read the CSO data from csv file via url path. To get idea of the data content, we will display the first few record of the dataset 
+
+
+```{r message=FALSE, warning=FALSE}
+
+# Read 1980 CSO data from URL
+file_path = "https://raw.githubusercontent.com/edsonfajilagot/PUPMAS-Demog-Predictive/master/1980_CSO.csv"
+cso = read.csv(file_path, header = TRUE, stringsAsFactors = FALSE)
+
+# Display first 6 records
+print(head(cso))
+
+# Display data table structure information
+str(cso)
+
+```
+
+<br/>
+We are interested on column dx which is the number of deaths between ages x to x+1. This information is converted into a time series data with frequency = 1 or yearly.
+
+
+```{r message=FALSE, warning=FALSE}
+
+# Get dx, number of death prior next year
+dx = cso$dx
+
+# Convert to time series
+dx_ts <- ts(dx)
+
+# Plot the time series data
+par(mfrow=c(1,2))
+plot(dx_ts, type ="l")
+boxplot(dx_ts)
+
+# Data summary
+summary(dx_ts)
+
+
+```
+
+
+#### Observations
+
+1. It can be noticed that the number of deaths for age 0-1 is quite high. From age 1-60 the number of death is increasing and will reach its peak during the age of 75-80.
+
+2. There is no seasonal pattern or trend, cycle presents as the data is recorded in a yearly basis.
+
+3. The mean and the variance is not constant over time which suggest the series is not stationary.
+
+
+
+
+## 2. Testing and Ensuring Stationarity
+
+To model a time series with the Box-Jenkins approach, the series has to be stationary. A stationary time series means a time series without trend, one having a constant mean and variance over time, which makes it easy for predicting values.
+
+To test for stationarity, we will check the autocorrelation and perform Augmented Dickey-Fuller unit root test (ADF). A stationary time series will have the autocorrelation fall to zero fairly quickly but for a non-stationary series it drops gradually. With ADF test, the p-value resulting from the ADF test has to be less than 0.05 or 5% for a time series to be stationary.
+
+```{r message=FALSE, warning=FALSE}
+
+
+# Check for autocorrelation 
+Acf(dx_ts)
+
+# ADF test
+adf.test(dx_ts)
+
+```
+
+It shows that the original series is non stationary. That is ACF drops gradually and ADF test failed to reject the null hypothesis.
+
+
+#### Differencing
+
+To convert a non-stationary series to stationary, we apply the differencing method. Differencing a time series means finding the differences between consecutive values of a time series data. The differenced values form a new time series dataset which can be tested to uncover new correlations or other interesting statistical properties.
+
+Getting the first difference still shows non stationarity.
+
+```{r message=FALSE, warning=FALSE}
+
+par(mfrow = c(1,2))
+
+# Differencing by first order
+plot(diff(dx_ts, differences = 1))
+Acf(diff(dx_ts, differences = 1))
+
+# ADF test
+adf.test(diff(dx_ts, differences = 1))
+
+```
+
+
+Differencing of second order resulted to a stationary data. With this our d parameter = 2.
+
+```{r message=FALSE, warning=FALSE}
+
+par(mfrow=c(1,2))
+
+# Differencing by second order
+plot(diff(dx_ts, differences = 2))
+Acf(diff(dx_ts, differences = 2))
+
+# ADF test
+adf.test(diff(dx_ts, differences = 2))
+
+```
+
+
+
+## 3. Identification of ARIMA(p,d,q) model parameters
+
+In this step, we identify the appropriate order of Autoregressive (AR) and Moving average (MA) processes by using the Autocorrelation function (ACF) and Partial Autocorrelation function (PACF)
+
+To get the AR order p. If the PACF cuts off after some lags, that number is the order of AR.
+
+We can determine the MA order q by looking at the sample ACF (auto correlation) of the differenced data. If the ACF cuts off after some lags, that number is the order of MA.
+
+Evaluation belows suggest our model to be ARIMA(3,2,0).
+
+
+```{r message=FALSE, warning=FALSE}
+
+# From differencing, d = 2
+
+par(mfrow = c(1,2))
+Pacf(dx_ts)
+# AR(3)
+
+Acf(diff(dx_ts, differences = 2))
+# MA(0)
+
+# Our model then is ARIMA(3,2,0)
+
+```
+
+
+We can also get the suggested paramters using auto.arima() function. This suggest our model to be ARIMA(2,2,0)
+
+```{r message=FALSE, warning=FALSE}
+
+auto.arima(dx_ts)
+
+```
+
+
+
+
+## 4. Building the model
+
+
+Let us make 2 models. That is - ARIMA(3,2,0) and ARIMA(2,2,0). We use the first 50 observation and then forecast the 49 observations for dx from age 51 to 99. We split the data into train data and test data.
+
+```{r message=FALSE, warning=FALSE}
+
+
+# Get train and test data
+dx_train <- ts(dx_ts[1:50])
+#dx_test <- ts(dx_ts[51:60], start = 51, end = 60)  #10
+#dx_test <- ts(dx_ts[51:80], start = 51, end = 80)  #30
+dx_test <- ts(dx_ts[51:99], start = 51, end = 99)  #49
+
+# Make arima model
+arimaModel_1 = arima(dx_train, order=c(3,2,0))
+arimaModel_2 = arima(dx_train, order=c(2,2,0))
+
+# Look at the parameters
+print(arimaModel_1)
+print(arimaModel_2)
+
+
+```
+
+
+
+## 5. Forecasting
+
+
+```{r}
+
+
+# forecast
+forecast1=predict(arimaModel_1, 49) #10,30,49
+forecast2=predict(arimaModel_2, 49)
+
+
+ts.plot(dx_train, dx_test, forecast1$pred, forecast2$pred, lty = c(1,5,5,5), lwd=c(2,2,2,2), col=c("black","black","red","blue"))
+grid()
+legend("topleft", bty="n", col = c("black", "red", "blue"), legend = c("Actual", "ARIMA(3,2,0)", "ARIMA(2,2,0)"), lty = c(2, 2, 2))
+
+
+
+```
+
+
+From the forecast point of view, the second model ARIMA(2,2,0) seems to be more accurate but with very small margin of difference vs. model 1. We can evaluate the forecast accurary by comparing the test series vs the predicted values as shown below. It shows that the two model is almost identical
+
+```{r}
+accmeasures1=regr.eval(dx_test, forecast1$pred)
+accmeasures2=regr.eval(dx_test, forecast2$pred)
+accMeasure=rbind(accmeasures1,accmeasures2)
+print(accMeasure)
+```
+
