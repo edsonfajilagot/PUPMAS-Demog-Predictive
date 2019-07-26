@@ -534,7 +534,12 @@ Acf(diff(dx_ts, differences = 2))</code></pre>
 </div>
 <div id="building-the-model" class="section level2">
 <h2>4. Building the model</h2>
-<p>Let us make 3 models. That is - ARIMA(3,2,0) and ARIMA(2,2,0). We use the first 50 observation and then forecast the 49 observations for dx from age 51 to 99. We split the data into train data and test data.</p>
+<p>Let us make 2 models. That is - ARIMA(3,2,0) and ARIMA(2,2,0). We use the first 50 observation and then forecast the 49 observations for dx from age 51 to 99. We split the data into train data and test data.</p>
+<p>Our AR model equations are:</p>
+<ul>
+<li><p>ARIMA(3,2,0) : yt = 1.17yt−1 - 0.64yt−2 + 0.15yt−3 + ϵt</p></li>
+<li><p>ARIMA(2,2,0) : yt = 1.05yt−1 - 0.43yt−2 + ϵt</p></li>
+</ul>
 <pre class="r"><code># Get train and test data
 dx_train &lt;- ts(dx_ts[1:50])
 #dx_test &lt;- ts(dx_ts[51:60], start = 51, end = 60)  #10
